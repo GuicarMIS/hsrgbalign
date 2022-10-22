@@ -136,24 +136,24 @@ public:
         
   
   			Eigen::Matrix<double, Eigen::Dynamic, 9, Eigen::RowMajor> A;
-  			std::cout << "OK -2" << std::endl;
+  			//std::cout << "OK -2" << std::endl;
   			A = Eigen::Matrix<double, Eigen::Dynamic, 9, Eigen::RowMajor>::Zero(3*count,9);
-  			std::cout << "OK -1" << std::endl;
+  			//std::cout << "OK -1" << std::endl;
     
 				for(unsigned int i = 0 ; i < count ; i++)
 				{				 	
-				std::cout << "OK " << i << std::endl;
+				//std::cout << "OK " << i << std::endl;
 				 	A(3*i,3) = -M[i].x*m[i].z; A(3*i,4) = -M[i].y*m[i].z; A(3*i,5) = -M[i].z*m[i].z; A(3*i,6) = M[i].x*m[i].y; A(3*i,7) = M[i].y*m[i].y; A(3*i,8) = M[i].z*m[i].y; 
 				 	A(3*i+1,0) = M[i].x*m[i].z; A(3*i+1,1) = M[i].y*m[i].z; A(3*i+1,2) = M[i].z*m[i].z; A(3*i+1,6) = -M[i].x*m[i].x; A(3*i+1,7) = -M[i].y*m[i].x; A(3*i+1,8) = -M[i].z*m[i].x; 
 				 	A(3*i+2,0) = -M[i].x*m[i].y; A(3*i+2,1) = -M[i].y*m[i].y; A(3*i+2,2) = -M[i].z*m[i].y; A(3*i+2,3) = M[i].x*m[i].x; A(3*i+2,4) = M[i].y*m[i].x; A(3*i+2,5) = M[i].z*m[i].x;
 				}
   
-  			std::cout << "A: " << A << std::endl;
+  			//std::cout << "A: " << A << std::endl;
   
   			Eigen::JacobiSVD<Eigen::MatrixXd> svd(A, Eigen::ComputeThinU | Eigen::ComputeThinV);
   			Eigen::MatrixXd V=svd.matrixV();
   
-  			std::cout << "V: " << V << std::endl;
+  			//std::cout << "V: " << V << std::endl;
   
   
   			Mat _H0( 3, 3, CV_64F );	
@@ -162,11 +162,11 @@ public:
   				h[i] = V(i,8);
   	
   			
-  			std::cout << "copy OK" << std::endl;
+  			//std::cout << "copy OK" << std::endl;
   	
   			_H0.convertTo(_model, _H0.type());
   	
-        std::cout << "convert OK" << std::endl;
+        //std::cout << "convert OK" << std::endl;
         
         /*
         for( i = 0; i < count; i++ )
@@ -239,6 +239,81 @@ public:
     }
 };
 
+class SphericalHomographyRefineCallback CV_FINAL : public LMSolver::Callback
+{
+public:
+    SphericalHomographyRefineCallback(InputArray _src, InputArray _dst)
+    {
+        src = _src.getMat();
+        dst = _dst.getMat();
+    }
+
+    bool compute(InputArray _param, OutputArray _err, OutputArray _Jac) const CV_OVERRIDE
+    {
+        int i, count = src.checkVector(3);
+        //std::cout << "LMSolver, count: " << count << std::endl;
+        Mat param = _param.getMat();
+        _err.create(count*3, 1, CV_64F);
+        Mat err = _err.getMat(), J;
+        if( _Jac.needed())
+        {
+            _Jac.create(count*3, param.rows, CV_64F);
+            J = _Jac.getMat();
+            CV_Assert( J.isContinuous() && J.cols == 9 );
+        }
+
+        const Point3f* M = src.ptr<Point3f>();
+        const Point3f* m = dst.ptr<Point3f>();
+        /*const*/ double* h = param.ptr<double>();
+        double* errptr = err.ptr<double>();
+        double* Jptr = J.data ? J.ptr<double>() : 0;
+        
+        //normalize h
+        double norm_h = 0;
+        for( i = 0 ; i < 9 ; i++)
+        	norm_h += h[i]*h[i];
+        norm_h = sqrt(norm_h);
+				for( i = 0 ; i < 9 ; i++)
+        	h[i] /= norm_h;
+        	
+				//double res = 0;
+
+        for( i = 0; i < count; i++ )
+        {            
+            float Xsh = h[0]*M[i].x + h[1]*M[i].y + h[2]*M[i].z;
+						float Ysh = h[3]*M[i].x + h[4]*M[i].y + h[5]*M[i].z;
+						float Zsh = h[6]*M[i].x + h[7]*M[i].y + h[8]*M[i].z;
+					
+						float inv_rho = 1.0f/sqrt(Xsh*Xsh + Ysh*Ysh + Zsh*Zsh);  				
+							
+						errptr[i*3] = Xsh*inv_rho - m[i].x;
+		        errptr[i*3+1] = Ysh*inv_rho - m[i].y;
+		        errptr[i*3+2] = Zsh*inv_rho - m[i].z;
+		        
+		        //res += errptr[i*3]*errptr[i*3] + errptr[i*3+1]*errptr[i*3+1] + errptr[i*3+2]*errptr[i*3+2];
+
+            if( Jptr )
+            {
+                Jptr[0] = M[i].x; Jptr[1] = M[i].y; Jptr[2] = M[i].z;
+                Jptr[3] = Jptr[4] = Jptr[5] = Jptr[6] = Jptr[7] = Jptr[8] = 0.;
+                
+                Jptr[12] = M[i].x; Jptr[13] = M[i].y; Jptr[14] = M[i].z;
+                Jptr[9] = Jptr[10] = Jptr[11] = Jptr[15] = Jptr[16] = Jptr[17] = 0.;
+                
+                Jptr[24] = M[i].x; Jptr[25] = M[i].y; Jptr[26] = M[i].z;
+                Jptr[18] = Jptr[19] = Jptr[20] = Jptr[21] = Jptr[22] = Jptr[23] = 0.;
+
+                Jptr += 27;
+            }
+        }
+        
+        //std::cout << "LMSolver, residual: " << res << std::endl;
+
+        return true;
+    }
+
+    Mat src, dst;
+};
 
 
 cv::Mat findSphericalHomography( InputArray _points1, InputArray _points2,
@@ -293,8 +368,7 @@ cv::Mat findSphericalHomography( InputArray _points1, InputArray _points2,
     else
         CV_Error(Error::StsBadArg, "Unknown estimation method");
 
-		/*
-    //TO DO: later
+		
     if( result && npoints > 4 && method != RHO)
     {
         compressElems( src.ptr<Point3f>(), tempMask.ptr<uchar>(), 1, npoints );
@@ -307,11 +381,18 @@ cv::Mat findSphericalHomography( InputArray _points1, InputArray _points2,
             dst = dst1;
             if( method == RANSAC || method == LMEDS )
                 cb->runKernel( src, dst, H );
-            Mat H8(8, 1, CV_64F, H.ptr<double>());
-            LMSolver::create(makePtr<SphericalHomographyEstimatorCallback>(src, dst), 10)->run(H8);
+            Mat H9(9, 1, CV_64F, H.ptr<double>());
+            LMSolver::create(makePtr<SphericalHomographyRefineCallback>(src, dst), 10)->run(H9);
+            double *h = H9.ptr<double>();//normalize h
+				    double norm_h = 0;
+				    for(unsigned i = 0 ; i < 9 ; i++)
+				    	norm_h += h[i]*h[i];
+				    norm_h = sqrt(norm_h);
+						for(unsigned i = 0 ; i < 9 ; i++)
+				    	h[i] /= norm_h;
         }
     }
-    */
+    
 
     if( result )
     {
