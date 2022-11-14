@@ -1022,8 +1022,8 @@ int main(int argc, char** argv) {
 		    */
 		    if(hsi_cart.at<double>((int)vd, (int)ud) != 0)
 				{
-		    	//aligned.at<double>(v, u) = affine_photometric_model[0]*(hsi_cart.at<double>((int)vd, (int)ud))+affine_photometric_model[1];
-					aligned.at<double>(v, u) = hsi_cart.at<double>((int)vd, (int)ud);
+		    	aligned.at<double>(v, u) = (hsi_cart.at<double>((int)vd, (int)ud)-affine_photometric_model[1])/affine_photometric_model[0];
+					//aligned.at<double>(v, u) = hsi_cart.at<double>((int)vd, (int)ud);//no application of affine photometric model
 					aligned_hsi_inds.at<int>(v, u) = hsi_inds.at<int>((int)vd, (int)ud);//for mapping export
 				}
 		    /*if(aligned.at<double>(v, u) > 255)
